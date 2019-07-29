@@ -16,4 +16,5 @@ test:
 	@${GOTEST} -v plugin/yanana.tokyo/v1/versioner/Versioner_test.go
 
 build:
-	${GOBUILD} -buildmode plugin -o ${DESTINATION} plugin/${API_VERSION}/${L_KIND}/${KIND}.go
+	${GOBUILD} -buildmode plugin -o ${DESTINATION} plugin/${API_VERSION}/${L_KIND}/${KIND}.go && chmod +x ${DESTINATION}
+
