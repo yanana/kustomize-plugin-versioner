@@ -13,7 +13,6 @@ RUN apk add --update git make gcc g++ \
 
 RUN make build
 
-FROM gcr.io/distroless/static
 FROM alpine:3.10
 
 COPY --from=builder /go/bin/kustomize /usr/bin/kustomize
