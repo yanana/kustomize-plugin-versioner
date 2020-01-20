@@ -3,16 +3,13 @@ package main_test
 import (
 	"testing"
 
-	"sigs.k8s.io/kustomize/v3/pkg/kusttest"
-	plugins_test "sigs.k8s.io/kustomize/v3/pkg/plugins/test"
+	kusttest_test "sigs.k8s.io/kustomize/api/testutils/kusttest"
 )
 
 func TestVersionerNoTransformWhenIrrelevant(t *testing.T) {
-	tc := plugins_test.NewEnvForTest(t).Set()
-	defer tc.Reset()
-	tc.BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
-	th := kusttest_test.NewKustTestPluginHarness(t, "/app")
-	th.WriteF("/app/versions.yaml", `
+	th := kusttest_test.MakeEnhancedHarness(t).BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
+	defer th.Reset()
+	th.WriteF("/versions.yaml", `
 environments:
   staging:
     foo:
@@ -55,11 +52,9 @@ spec:
 }
 
 func TestVersionerTransformAsVersionFile(t *testing.T) {
-	tc := plugins_test.NewEnvForTest(t).Set()
-	defer tc.Reset()
-	tc.BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
-	th := kusttest_test.NewKustTestPluginHarness(t, "/app")
-	th.WriteF("/app/versions.yaml", `
+	th := kusttest_test.MakeEnhancedHarness(t).BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
+	defer th.Reset()
+	th.WriteF("/versions.yaml", `
 environments:
   production:
     magna-carta:
@@ -72,6 +67,7 @@ environments:
       name: magna/carta
       tag: 2
     the-container:
+      name: oh/cool
       digest: 6a92cd1fcdc8d8cdec60f33dda4db2cb1fcdcacf3410a8e05b3741f44a9b5998
 `)
 	rm := th.LoadAndRunTransformer(`
@@ -92,7 +88,7 @@ spec:
       containers:
       - image: elasticsearch
         name: magna-carta
-      - image: foo:bar
+      - image: gcr.io/foo/bar:baz
         name: the-container
       - image: baz
         name: xyz
@@ -108,10 +104,9 @@ spec:
       containers:
       - image: magna/carta:2
         name: magna-carta
-      - image: foo@6a92cd1fcdc8d8cdec60f33dda4db2cb1fcdcacf3410a8e05b3741f44a9b5998
+      - image: oh/cool@6a92cd1fcdc8d8cdec60f33dda4db2cb1fcdcacf3410a8e05b3741f44a9b5998
         name: the-container
       - image: baz
         name: xyz
 `)
 }
-

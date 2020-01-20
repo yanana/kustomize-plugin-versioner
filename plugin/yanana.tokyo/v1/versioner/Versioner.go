@@ -6,10 +6,12 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	"sigs.k8s.io/kustomize/v3/pkg/ifc"
-	"sigs.k8s.io/kustomize/v3/pkg/resmap"
+	"sigs.k8s.io/kustomize/api/ifc"
+	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/yaml"
 )
+
+var _ resmap.TransformerPlugin = (*plugin)(nil)
 
 type Image struct {
 	Name   string `json:"name,omitempty" yaml:"name,omitempty"`
@@ -24,6 +26,12 @@ type plugin struct {
 	VersionsFilePath string `json:"versionsFilePath" yaml:"versionsFilePath"`
 	Versions         Versions
 	loaderRoot       string
+}
+
+func (p *plugin) Config(h *resmap.PluginHelpers, config []byte) error {
+	p.loaderRoot = h.Loader().Root()
+
+	return p.unmarshal(h.Loader(), config)
 }
 
 //noinspection GoUnusedGlobalVariable
@@ -57,13 +65,6 @@ func (p *plugin) unmarshal(ldr ifc.Loader, data []byte) error {
 		return err
 	}
 	return nil
-}
-
-func (p *plugin) Config(
-	ldr ifc.Loader, rf *resmap.Factory, c []byte) (err error) {
-	p.loaderRoot = ldr.Root()
-
-	return p.unmarshal(ldr, c)
 }
 
 func (p *plugin) Transform(m resmap.ResMap) error {
