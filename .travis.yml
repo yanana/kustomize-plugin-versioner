@@ -1,7 +1,7 @@
 language: go
 
 go:
-  - '1.12'
+  - '1.13'
 
 script:
   - export GO111MODULE=on CGO_ENABLED=1 GOROOT=$(go env GOROOT)
