@@ -9,7 +9,8 @@ import (
 func TestVersionerNoTransformWhenIrrelevant(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t).BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
 	defer th.Reset()
-	th.WriteF("/versions.yaml", `
+
+	th.WriteF("/app/versions.yaml", `
 environments:
   staging:
     foo:
@@ -18,14 +19,17 @@ environments:
     the-container:
       tag: new-v1
 `)
-	rm := th.LoadAndRunTransformer(`
+
+	th.WriteF("/app/versioner.yaml", `
 apiVersion: yanana.tokyo/v1
 kind: Versioner
 metadata:
   name: notImportantHere
 versionsFilePath: versions.yaml
 environment: staging
-`, `
+`)
+
+	th.WriteF("/app/deployment.yaml", `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -37,7 +41,17 @@ spec:
       - image: elasticsearch
         name: elasticsearch
 `)
-	th.AssertActualEqualsExpected(rm, `
+
+	th.WriteK("/app", `
+resources:
+  - deployment.yaml
+transformers:
+  - versioner.yaml
+`)
+
+	m := th.Run("/app", th.MakeOptionsPluginsEnabled())
+
+	th.AssertActualEqualsExpected(m, `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -54,7 +68,7 @@ spec:
 func TestVersionerTransformAsVersionFile(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t).BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
 	defer th.Reset()
-	th.WriteF("/versions.yaml", `
+	th.WriteF("/app/versions.yaml", `
 environments:
   production:
     magna-carta:
@@ -70,14 +84,17 @@ environments:
       name: oh/cool
       digest: 6a92cd1fcdc8d8cdec60f33dda4db2cb1fcdcacf3410a8e05b3741f44a9b5998
 `)
-	rm := th.LoadAndRunTransformer(`
+
+	th.WriteF("/app/versioner.yaml", `
 apiVersion: yanana.tokyo/v1
 kind: Versioner
 metadata:
   name: notImportantHere
 versionsFilePath: versions.yaml
 environment: staging
-`, `
+`)
+
+	th.WriteF("/app/deployment.yaml", `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -93,7 +110,17 @@ spec:
       - image: baz
         name: xyz
 `)
-	th.AssertActualEqualsExpected(rm, `
+
+	th.WriteK("/app", `
+resources:
+  - deployment.yaml
+transformers:
+  - versioner.yaml
+`)
+
+	m := th.Run("/app", th.MakeOptionsPluginsEnabled())
+
+	th.AssertActualEqualsExpected(m, `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
