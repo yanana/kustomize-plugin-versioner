@@ -1,4 +1,4 @@
-FROM golang:1.12-alpine AS builder
+FROM golang:1.13-alpine AS builder
 
 ENV GO111MODULE=on
 ENV GOOS=linux
@@ -9,7 +9,7 @@ COPY . /app
 WORKDIR /app
 
 RUN apk add --update git make gcc g++ \
- && go install sigs.k8s.io/kustomize/v3/cmd/kustomize
+ && go install sigs.k8s.io/kustomize/kustomize/v3
 
 RUN make build
 
