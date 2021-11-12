@@ -13,7 +13,7 @@ RUN apk add --update git make gcc g++ \
 
 RUN make build
 
-FROM alpine:3.14.2
+FROM alpine:3.14.3
 
 COPY --from=builder /go/bin/kustomize /usr/bin/kustomize
 COPY --from=builder /root/.config/kustomize/plugin /root/.config/kustomize/plugin/
