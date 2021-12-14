@@ -9,7 +9,8 @@ import (
 func TestVersionerNoTransformWhenIrrelevant(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t).BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
 	defer th.Reset()
-	th.WriteF("/versions.yaml", `
+
+	th.WriteF("/app/versions.yaml", `
 environments:
   staging:
     foo:
@@ -18,14 +19,17 @@ environments:
     the-container:
       tag: new-v1
 `)
-	rm := th.LoadAndRunTransformer(`
+
+	th.WriteF("/app/versioner.yaml", `
 apiVersion: yanana.tokyo/v1
 kind: Versioner
 metadata:
   name: notImportantHere
 versionsFilePath: versions.yaml
 environment: staging
-`, `
+`)
+
+	th.WriteF("/app/deployment.yaml", `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -37,7 +41,17 @@ spec:
       - image: elasticsearch
         name: elasticsearch
 `)
-	th.AssertActualEqualsExpected(rm, `
+
+	th.WriteK("/app", `
+resources:
+  - deployment.yaml
+transformers:
+  - versioner.yaml
+`)
+
+	m := th.Run("/app", th.MakeOptionsPluginsEnabled())
+
+	th.AssertActualEqualsExpected(m, `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -54,7 +68,8 @@ spec:
 func TestVersionerTransformsDeploymentAsVersionFile(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t).BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
 	defer th.Reset()
-	th.WriteF("/versions.yaml", `
+
+	th.WriteF("/app/versions.yaml", `
 environments:
   production:
     magna-carta:
@@ -70,14 +85,15 @@ environments:
       name: oh/cool
       digest: 6a92cd1fcdc8d8cdec60f33dda4db2cb1fcdcacf3410a8e05b3741f44a9b5998
 `)
-	rm := th.LoadAndRunTransformer(`
+	th.WriteF("/app/versioner.yaml", `
 apiVersion: yanana.tokyo/v1
 kind: Versioner
 metadata:
   name: notImportantHere
 versionsFilePath: versions.yaml
 environment: staging
-`, `
+`)
+	th.WriteF("/app/deployment.yaml", `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -93,7 +109,17 @@ spec:
       - image: baz
         name: xyz
 `)
-	th.AssertActualEqualsExpected(rm, `
+
+	th.WriteK("/app", `
+resources:
+  - deployment.yaml
+transformers:
+  - versioner.yaml
+`)
+
+	m := th.Run("/app", th.MakeOptionsPluginsEnabled())
+
+	th.AssertActualEqualsExpected(m, `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -114,7 +140,8 @@ spec:
 func TestVersionerTransformsPodAsVersionFile(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t).BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
 	defer th.Reset()
-	th.WriteF("/versions.yaml", `
+
+	th.WriteF("/app/versions.yaml", `
 environments:
   production:
     magna-carta:
@@ -130,14 +157,16 @@ environments:
       name: oh/cool
       digest: 6a92cd1fcdc8d8cdec60f33dda4db2cb1fcdcacf3410a8e05b3741f44a9b5998
 `)
-	rm := th.LoadAndRunTransformer(`
+	th.WriteF("/app/versioner.yaml", `
 apiVersion: yanana.tokyo/v1
 kind: Versioner
 metadata:
   name: notImportantHere
 versionsFilePath: versions.yaml
 environment: staging
-`, `
+`)
+
+	th.WriteF("/app/pod.yaml", `
 apiVersion: v1
 kind: Pod
 metadata:
@@ -151,7 +180,17 @@ spec:
   - image: baz
     name: xyz
 `)
-	th.AssertActualEqualsExpected(rm, `
+
+	th.WriteK("/app", `
+resources:
+  - pod.yaml
+transformers:
+  - versioner.yaml
+  `)
+
+	m := th.Run("/app", th.MakeOptionsPluginsEnabled())
+
+	th.AssertActualEqualsExpected(m, `
 apiVersion: v1
 kind: Pod
 metadata:
@@ -170,7 +209,8 @@ spec:
 func TestVersionerTransformsPodTemplateAsVersionFile(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t).BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
 	defer th.Reset()
-	th.WriteF("/versions.yaml", `
+
+	th.WriteF("/app/versions.yaml", `
 environments:
   production:
     magna-carta:
@@ -186,14 +226,17 @@ environments:
       name: oh/cool
       digest: 6a92cd1fcdc8d8cdec60f33dda4db2cb1fcdcacf3410a8e05b3741f44a9b5998
 `)
-	rm := th.LoadAndRunTransformer(`
+
+	th.WriteF("/app/versioner.yaml", `
 apiVersion: yanana.tokyo/v1
 kind: Versioner
 metadata:
   name: notImportantHere
 versionsFilePath: versions.yaml
 environment: staging
-`, `
+`)
+
+	th.WriteF("/app/pod-template.yaml", `
 apiVersion: v1
 kind: PodTemplate
 metadata:
@@ -208,7 +251,17 @@ template:
     - image: baz
       name: xyz
 `)
-	th.AssertActualEqualsExpected(rm, `
+
+	th.WriteK("/app", `
+resources:
+  - pod-template.yaml
+transformers:
+  - versioner.yaml
+`)
+
+	m := th.Run("/app", th.MakeOptionsPluginsEnabled())
+
+	th.AssertActualEqualsExpected(m, `
 apiVersion: v1
 kind: PodTemplate
 metadata:
@@ -228,7 +281,8 @@ template:
 func TestVersionerTransformsReplicationControllerAsVersionFile(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t).BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
 	defer th.Reset()
-	th.WriteF("/versions.yaml", `
+
+	th.WriteF("/app/versions.yaml", `
 environments:
   production:
     magna-carta:
@@ -244,14 +298,17 @@ environments:
       name: oh/cool
       digest: 6a92cd1fcdc8d8cdec60f33dda4db2cb1fcdcacf3410a8e05b3741f44a9b5998
 `)
-	rm := th.LoadAndRunTransformer(`
+
+	th.WriteF("/app/versioner.yaml", `
 apiVersion: yanana.tokyo/v1
 kind: Versioner
 metadata:
   name: notImportantHere
 versionsFilePath: versions.yaml
 environment: staging
-`, `
+`)
+
+	th.WriteF("/app/replication-controller.yaml", `
 apiVersion: v1
 kind: ReplicationController
 metadata:
@@ -267,7 +324,17 @@ spec:
       - image: baz
         name: xyz
 `)
-	th.AssertActualEqualsExpected(rm, `
+
+	th.WriteK("/app", `
+resources:
+  - replication-controller.yaml
+transformers:
+  - versioner.yaml
+`)
+
+	m := th.Run("/app", th.MakeOptionsPluginsEnabled())
+
+	th.AssertActualEqualsExpected(m, `
 apiVersion: v1
 kind: ReplicationController
 metadata:
@@ -288,7 +355,7 @@ spec:
 func TestVersionerTransformsReplicaSetAsVersionFile(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t).BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
 	defer th.Reset()
-	th.WriteF("/versions.yaml", `
+	th.WriteF("/app/versions.yaml", `
 environments:
   production:
     magna-carta:
@@ -304,14 +371,17 @@ environments:
       name: oh/cool
       digest: 6a92cd1fcdc8d8cdec60f33dda4db2cb1fcdcacf3410a8e05b3741f44a9b5998
 `)
-	rm := th.LoadAndRunTransformer(`
+
+	th.WriteF("/app/versioner.yaml", `
 apiVersion: yanana.tokyo/v1
 kind: Versioner
 metadata:
   name: notImportantHere
 versionsFilePath: versions.yaml
 environment: staging
-`, `
+`)
+
+	th.WriteF("/app/replica-set.yaml", `
 apiVersion: apps/v1
 kind: ReplicaSet
 metadata:
@@ -327,7 +397,17 @@ spec:
       - image: baz
         name: xyz
 `)
-	th.AssertActualEqualsExpected(rm, `
+
+	th.WriteK("/app", `
+resources:
+  - replica-set.yaml
+transformers:
+  - versioner.yaml
+`)
+
+	m := th.Run("/app", th.MakeOptionsPluginsEnabled())
+
+	th.AssertActualEqualsExpected(m, `
 apiVersion: apps/v1
 kind: ReplicaSet
 metadata:
@@ -348,7 +428,8 @@ spec:
 func TestVersionerTransformsStatefulSetAsVersionFile(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t).BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
 	defer th.Reset()
-	th.WriteF("/versions.yaml", `
+
+	th.WriteF("/app/versions.yaml", `
 environments:
   production:
     magna-carta:
@@ -364,14 +445,17 @@ environments:
       name: oh/cool
       digest: 6a92cd1fcdc8d8cdec60f33dda4db2cb1fcdcacf3410a8e05b3741f44a9b5998
 `)
-	rm := th.LoadAndRunTransformer(`
+
+	th.WriteF("/app/versioner.yaml", `
 apiVersion: yanana.tokyo/v1
 kind: Versioner
 metadata:
   name: notImportantHere
 versionsFilePath: versions.yaml
 environment: staging
-`, `
+`)
+
+	th.WriteF("/app/stateful-set.yaml", `
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -387,7 +471,17 @@ spec:
       - image: baz
         name: xyz
 `)
-	th.AssertActualEqualsExpected(rm, `
+
+	th.WriteK("/app", `
+resources:
+  - stateful-set.yaml
+transformers:
+  - versioner.yaml
+`)
+
+	m := th.Run("/app", th.MakeOptionsPluginsEnabled())
+
+	th.AssertActualEqualsExpected(m, `
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -408,7 +502,8 @@ spec:
 func TestVersionerTransformsCronJobAsVersionFile(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t).BuildGoPlugin("yanana.tokyo", "v1", "Versioner")
 	defer th.Reset()
-	th.WriteF("/versions.yaml", `
+
+	th.WriteF("/app/versions.yaml", `
 environments:
   production:
     magna-carta:
@@ -424,14 +519,17 @@ environments:
       name: oh/cool
       digest: 6a92cd1fcdc8d8cdec60f33dda4db2cb1fcdcacf3410a8e05b3741f44a9b5998
 `)
-	rm := th.LoadAndRunTransformer(`
+
+	th.WriteF("/app/versioner.yaml", `
 apiVersion: yanana.tokyo/v1
 kind: Versioner
 metadata:
   name: notImportantHere
 versionsFilePath: versions.yaml
 environment: staging
-`, `
+`)
+
+	th.WriteF("/app/cron-job.yaml", `
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -449,7 +547,17 @@ spec:
           - image: baz
             name: xyz
 `)
-	th.AssertActualEqualsExpected(rm, `
+
+	th.WriteK("/app", `
+resources:
+  - cron-job.yaml
+transformers:
+  - versioner.yaml
+`)
+
+	m := th.Run("/app", th.MakeOptionsPluginsEnabled())
+
+	th.AssertActualEqualsExpected(m, `
 apiVersion: batch/v1
 kind: CronJob
 metadata:
