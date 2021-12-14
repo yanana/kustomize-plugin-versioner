@@ -1,14 +1,18 @@
 package main
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/pkg/errors"
+	"sigs.k8s.io/kustomize/api/filters/filtersutil"
+	"sigs.k8s.io/kustomize/api/filters/fsslice"
 	"sigs.k8s.io/kustomize/api/ifc"
 	"sigs.k8s.io/kustomize/api/resmap"
-	"sigs.k8s.io/yaml"
+	"sigs.k8s.io/kustomize/api/types"
+	"sigs.k8s.io/kustomize/kyaml/kio"
+	"sigs.k8s.io/kustomize/kyaml/resid"
+	"sigs.k8s.io/kustomize/kyaml/yaml"
 )
 
 var _ resmap.TransformerPlugin = (*plugin)(nil)
@@ -19,12 +23,168 @@ type Image struct {
 	Digest string `json:"digest,omitempty" yaml:"digest,omitempty"`
 }
 
-type Versions map[string]Image
+// A map of Images keyed by image name.
+type versions map[string]Image
+
+type Filter struct {
+	Name  string `json:"name" yaml:"name"`
+	Image Image  `json:"image,omitempty" yaml:"image,omitempty"`
+}
+
+var _ kio.Filter = Filter{}
+
+// targetFss is a types.FsSlice whose elements are FieldSpecs
+// that should be manipulated.
+var targetFss = types.FsSlice{
+	{
+		Gvk: resid.Gvk{
+			Group: "apps",
+			Kind:  "Deployment",
+		},
+		Path: "spec/template/spec/containers",
+	},
+	{
+		Gvk: resid.Gvk{
+			Group: "",
+			Kind:  "Pod",
+		},
+		Path: "spec/containers",
+	},
+	{
+		Gvk: resid.Gvk{
+			Group: "",
+			Kind:  "PodTemplate",
+		},
+		Path: "template/spec/containers",
+	},
+	{
+		Gvk: resid.Gvk{
+			Group: "",
+			Kind:  "ReplicationController",
+		},
+		Path: "spec/template/spec/containers",
+	},
+	{
+		Gvk: resid.Gvk{
+			Group: "apps",
+			Kind:  "ReplicaSet",
+		},
+		Path: "spec/template/spec/containers",
+	},
+	{
+		Gvk: resid.Gvk{
+			Group: "apps",
+			Kind:  "StatefulSet",
+		},
+		Path: "spec/template/spec/containers",
+	},
+	{
+		Gvk: resid.Gvk{
+			Group: "apps",
+			Kind:  "DaemonSet",
+		},
+		Path: "spec/template/spec/containers",
+	},
+	{
+		Gvk: resid.Gvk{
+			Group: "batch",
+			Kind:  "Job",
+		},
+		Path: "spec/template/spec/containers",
+	},
+	{
+		Gvk: resid.Gvk{
+			Group: "batch",
+			Kind:  "CronJob",
+		},
+		Path: "spec/jobTemplate/spec/template/spec/containers",
+	},
+}
+
+func (f Filter) Filter(nodes []*yaml.RNode) ([]*yaml.RNode, error) {
+	_, err := kio.FilterAll(yaml.FilterFunc(f.filter)).Filter(nodes)
+	return nodes, err
+}
+
+func (f Filter) filter(node *yaml.RNode) (*yaml.RNode, error) {
+	meta, err := node.GetMeta()
+	if err != nil {
+		return nil, err
+	}
+
+	if meta.Kind == `CustomResourceDefinition` {
+		return node, nil
+	}
+
+	if err := node.PipeE(fsslice.Filter{
+		FsSlice:  targetFss,
+		SetValue: updateFn(f.Name, f.Image),
+	}); err != nil {
+		return nil, err
+	}
+
+	return node, nil
+}
+
+func updateFn(name string, image Image) filtersutil.SetFn {
+	return func(node *yaml.RNode) error {
+		return node.PipeE(imageUpdater{
+			Name:  name,
+			Image: image,
+		})
+	}
+}
+
+type imageUpdater struct {
+	Name  string
+	Image Image
+}
+
+func (u imageUpdater) Filter(node *yaml.RNode) (*yaml.RNode, error) {
+	switch node.YNode().Kind {
+	case yaml.SequenceNode:
+		if err := node.VisitElements(func(node *yaml.RNode) error {
+			if node.YNode().Kind == yaml.MappingNode {
+				nameF := node.Field("name")
+				if nameF == nil {
+					return nil
+				}
+				name, err := nameF.Value.String()
+				if err != nil {
+					return err
+				}
+				name = strings.TrimSpace(name)
+				if name != u.Name {
+					return nil
+				}
+				imageF := node.Field("image")
+				if imageF == nil {
+					return nil
+				}
+				image, err := imageF.Value.String()
+				if err != nil {
+					return err
+				}
+				image = strings.TrimSpace(image)
+				modImage := newImage(image, u.Image)
+				setter := yaml.FieldSetter{
+					Name:        "image",
+					StringValue: modImage,
+				}
+				return node.PipeE(setter)
+			}
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+	return node, nil
+}
 
 type plugin struct {
 	Environment      string `json:"environment" yaml:"environment"`
 	VersionsFilePath string `json:"versionsFilePath" yaml:"versionsFilePath"`
-	Versions         Versions
+	Versions         versions
 	loaderRoot       string
 }
 
@@ -34,25 +194,30 @@ func (p *plugin) Config(h *resmap.PluginHelpers, config []byte) error {
 	return p.unmarshal(h.Loader(), config)
 }
 
-//noinspection GoUnusedGlobalVariable
+// noinspection GoUnusedGlobalVariable
 var KustomizePlugin plugin
 
-func readVersionsFile(ldr ifc.Loader, versionsFilePath string, env string, versions *Versions) error {
-	p := filepath.Join(ldr.Root(), filepath.Clean(versionsFilePath))
-	data, err := ldr.Load(p)
+// readVersionsFile reads the versions file and parse it into plugin.Version.
+func (p *plugin) readVersionsFile(ldr ifc.Loader) error {
+	path := filepath.Join(ldr.Root(), filepath.Clean(p.VersionsFilePath))
+	data, err := ldr.Load(path)
 	if err != nil {
 		return err
 	}
 	e := &struct {
-		Environments map[string]Versions `json:"environments,omitempty" yaml:"environments,omitempty"`
+		Environments map[string]versions `json:"environments,omitempty" yaml:"environments,omitempty"`
 	}{}
 	if err := yaml.Unmarshal(data, e); err != nil {
 		return err
 	}
-	if _, found := e.Environments[env]; !found {
-		return errors.Errorf("versions for the environment %s was not found in %s", env, p)
+	if _, found := e.Environments[p.Environment]; !found {
+		return errors.Errorf("versions for the environment %s was not found in %s", p.Environment, path)
 	}
-	*versions = e.Environments[env]
+	versions := versions{}
+	for name, image := range e.Environments[p.Environment] {
+		versions[name] = image //.toTypesImage()
+	}
+	p.Versions = versions
 
 	return nil
 }
@@ -61,23 +226,26 @@ func (p *plugin) unmarshal(ldr ifc.Loader, data []byte) error {
 	if err := yaml.Unmarshal(data, p); err != nil {
 		return err
 	}
-	if err := readVersionsFile(ldr, p.VersionsFilePath, p.Environment, &p.Versions); err != nil {
+	if err := p.readVersionsFile(ldr); err != nil {
 		return err
 	}
+
 	return nil
 }
 
 func (p *plugin) Transform(m resmap.ResMap) error {
-	for _, r := range m.Resources() {
-		// Replace images in "containers" and "initContainers".
-		if err := p.findAndReplaceImage(r.Map()); err != nil && r.OrgId().Kind != `CustomResourceDefinition` {
+	for name, image := range p.Versions {
+		if err := m.ApplyFilter(Filter{
+			Name:  name,
+			Image: image,
+		}); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (p *plugin) mutateImage(original string, image Image) (string, error) {
+func newImage(original string, image Image) string {
 	name, tag := split(original)
 	if image.Name != "" {
 		name = image.Name
@@ -88,87 +256,7 @@ func (p *plugin) mutateImage(original string, image Image) (string, error) {
 	if image.Digest != "" {
 		tag = "@" + image.Digest
 	}
-	return name + tag, nil
-}
-
-// findAndReplaceImage replaces the image name and
-// tags inside one object.
-// It searches the object for container session
-// then loops though all images inside containers
-// session, finds matched ones and update the
-// image name and tag name
-func (p *plugin) findAndReplaceImage(obj map[string]interface{}) error {
-	paths := []string{"containers", "initContainers"}
-	updated := false
-	for _, path := range paths {
-		containers, found := obj[path]
-		if !found {
-			continue
-		}
-		if _, err := p.updateContainers(containers); err != nil {
-			return err
-		}
-		updated = true
-	}
-	if !updated {
-		return p.findContainers(obj)
-	}
-	return nil
-}
-
-func (p *plugin) updateContainers(in interface{}) (interface{}, error) {
-	containers, ok := in.([]interface{})
-	if !ok {
-		return nil, fmt.Errorf(
-			"containers path is not of type []interface{} but %T", in)
-	}
-	for c := range containers {
-		container := containers[c].(map[string]interface{})
-		containerImage, found := container["image"]
-		if !found {
-			continue
-		}
-		imageName := containerImage.(string)
-		containerName, found := container["name"]
-		if !found {
-			continue
-		}
-		name := containerName.(string)
-		image, found := p.Versions[name]
-		if !found {
-			continue
-		}
-		newImage, err := p.mutateImage(imageName, image)
-		if err != nil {
-			return nil, err
-		}
-		container["image"] = newImage
-	}
-	return containers, nil
-}
-
-func (p *plugin) findContainers(obj map[string]interface{}) error {
-	for key := range obj {
-		switch typedV := obj[key].(type) {
-		case map[string]interface{}:
-			err := p.findAndReplaceImage(typedV)
-			if err != nil {
-				return err
-			}
-		case []interface{}:
-			for i := range typedV {
-				item := typedV[i]
-				typedItem, ok := item.(map[string]interface{})
-				if ok {
-					err := p.findAndReplaceImage(typedItem)
-					if err != nil {
-						return err
-					}
-				}
-			}
-		}
-	}
-	return nil
+	return name + tag
 }
 
 // split separates and returns the name and tag parts
