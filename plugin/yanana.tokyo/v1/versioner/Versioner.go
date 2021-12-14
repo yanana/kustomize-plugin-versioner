@@ -24,7 +24,7 @@ type Image struct {
 }
 
 // A map of Images keyed by image name.
-type versions map[string]Image
+type Versions map[string]Image
 
 type Filter struct {
 	Name  string `json:"name" yaml:"name"`
@@ -184,7 +184,7 @@ func (u imageUpdater) Filter(node *yaml.RNode) (*yaml.RNode, error) {
 type plugin struct {
 	Environment      string `json:"environment" yaml:"environment"`
 	VersionsFilePath string `json:"versionsFilePath" yaml:"versionsFilePath"`
-	Versions         versions
+	Versions         Versions
 	loaderRoot       string
 }
 
@@ -205,7 +205,7 @@ func (p *plugin) readVersionsFile(ldr ifc.Loader) error {
 		return err
 	}
 	e := &struct {
-		Environments map[string]versions `json:"environments,omitempty" yaml:"environments,omitempty"`
+		Environments map[string]Versions `json:"environments,omitempty" yaml:"environments,omitempty"`
 	}{}
 	if err := yaml.Unmarshal(data, e); err != nil {
 		return err
@@ -213,7 +213,7 @@ func (p *plugin) readVersionsFile(ldr ifc.Loader) error {
 	if _, found := e.Environments[p.Environment]; !found {
 		return errors.Errorf("versions for the environment %s was not found in %s", p.Environment, path)
 	}
-	versions := versions{}
+	versions := Versions{}
 	for name, image := range e.Environments[p.Environment] {
 		versions[name] = image //.toTypesImage()
 	}
