@@ -27,8 +27,7 @@ type Image struct {
 type Versions map[string]Image
 
 type Filter struct {
-	Name  string `json:"name" yaml:"name"`
-	Image Image  `json:"image,omitempty" yaml:"image,omitempty"`
+	Versions Versions `json:"versions" yaml:"versions"`
 }
 
 var _ kio.Filter = Filter{}
@@ -118,7 +117,7 @@ func (f Filter) filter(node *yaml.RNode) (*yaml.RNode, error) {
 
 	if err := node.PipeE(fsslice.Filter{
 		FsSlice:  targetFss,
-		SetValue: updateFn(f.Name, f.Image),
+		SetValue: f.updateFn(),
 	}); err != nil {
 		return nil, err
 	}
@@ -126,18 +125,35 @@ func (f Filter) filter(node *yaml.RNode) (*yaml.RNode, error) {
 	return node, nil
 }
 
-func updateFn(name string, image Image) filtersutil.SetFn {
+func (f Filter) updateFn() filtersutil.SetFn {
 	return func(node *yaml.RNode) error {
-		return node.PipeE(imageUpdater{
-			Name:  name,
-			Image: image,
-		})
+		return node.PipeE(imageUpdater(f))
 	}
 }
 
 type imageUpdater struct {
-	Name  string
-	Image Image
+	Versions Versions
+}
+
+func getNameAndImage(node *yaml.RNode) (name string, image string, err error) {
+	n := node.Field("name")
+	if n == nil {
+		return
+	}
+	name, err = n.Value.String()
+	if err != nil {
+		return
+	}
+	i := node.Field("image")
+	if i == nil {
+		return
+	}
+	image, err = i.Value.String()
+	if err != nil {
+		return
+	}
+
+	return strings.TrimSpace(name), strings.TrimSpace(image), err
 }
 
 func (u imageUpdater) Filter(node *yaml.RNode) (*yaml.RNode, error) {
@@ -145,33 +161,23 @@ func (u imageUpdater) Filter(node *yaml.RNode) (*yaml.RNode, error) {
 	case yaml.SequenceNode:
 		if err := node.VisitElements(func(node *yaml.RNode) error {
 			if node.YNode().Kind == yaml.MappingNode {
-				nameF := node.Field("name")
-				if nameF == nil {
-					return nil
-				}
-				name, err := nameF.Value.String()
+				name, image, err := getNameAndImage(node)
 				if err != nil {
 					return err
 				}
-				name = strings.TrimSpace(name)
-				if name != u.Name {
-					return nil
+				for n, i := range u.Versions {
+					if name != n {
+						continue
+					}
+					modImage := newImage(image, i)
+					setter := yaml.FieldSetter{
+						Name:        "image",
+						StringValue: modImage,
+					}
+					if err := node.PipeE(setter); err != nil {
+						return err
+					}
 				}
-				imageF := node.Field("image")
-				if imageF == nil {
-					return nil
-				}
-				image, err := imageF.Value.String()
-				if err != nil {
-					return err
-				}
-				image = strings.TrimSpace(image)
-				modImage := newImage(image, u.Image)
-				setter := yaml.FieldSetter{
-					Name:        "image",
-					StringValue: modImage,
-				}
-				return node.PipeE(setter)
 			}
 			return nil
 		}); err != nil {
@@ -185,22 +191,21 @@ type plugin struct {
 	Environment      string `json:"environment" yaml:"environment"`
 	VersionsFilePath string `json:"versionsFilePath" yaml:"versionsFilePath"`
 	Versions         Versions
-	loaderRoot       string
+	ldr              ifc.Loader
 }
 
 func (p *plugin) Config(h *resmap.PluginHelpers, config []byte) error {
-	p.loaderRoot = h.Loader().Root()
-
-	return p.unmarshal(h.Loader(), config)
+	p.ldr = h.Loader()
+	return p.unmarshal(config)
 }
 
 // noinspection GoUnusedGlobalVariable
 var KustomizePlugin plugin
 
 // readVersionsFile reads the versions file and parse it into plugin.Version.
-func (p *plugin) readVersionsFile(ldr ifc.Loader) error {
-	path := filepath.Join(ldr.Root(), filepath.Clean(p.VersionsFilePath))
-	data, err := ldr.Load(path)
+func (p *plugin) readVersionsFile() error {
+	path := filepath.Join(p.ldr.Root(), filepath.Clean(p.VersionsFilePath))
+	data, err := p.ldr.Load(path)
 	if err != nil {
 		return err
 	}
@@ -215,18 +220,18 @@ func (p *plugin) readVersionsFile(ldr ifc.Loader) error {
 	}
 	versions := Versions{}
 	for name, image := range e.Environments[p.Environment] {
-		versions[name] = image //.toTypesImage()
+		versions[name] = image
 	}
 	p.Versions = versions
 
 	return nil
 }
 
-func (p *plugin) unmarshal(ldr ifc.Loader, data []byte) error {
+func (p *plugin) unmarshal(data []byte) error {
 	if err := yaml.Unmarshal(data, p); err != nil {
 		return err
 	}
-	if err := p.readVersionsFile(ldr); err != nil {
+	if err := p.readVersionsFile(); err != nil {
 		return err
 	}
 
@@ -234,13 +239,10 @@ func (p *plugin) unmarshal(ldr ifc.Loader, data []byte) error {
 }
 
 func (p *plugin) Transform(m resmap.ResMap) error {
-	for name, image := range p.Versions {
-		if err := m.ApplyFilter(Filter{
-			Name:  name,
-			Image: image,
-		}); err != nil {
-			return err
-		}
+	if err := m.ApplyFilter(Filter{
+		Versions: p.Versions,
+	}); err != nil {
+		return err
 	}
 	return nil
 }
