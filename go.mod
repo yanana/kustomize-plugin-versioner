@@ -4,8 +4,8 @@ go 1.17
 
 require (
 	github.com/pkg/errors v0.9.1
-	sigs.k8s.io/kustomize/api v0.11.2
-	sigs.k8s.io/kustomize/kyaml v0.13.3
+	sigs.k8s.io/kustomize/api v0.11.3
+	sigs.k8s.io/kustomize/kyaml v0.13.4
 )
 
 require (
