@@ -9,8 +9,7 @@ COPY . /app
 WORKDIR /app
 
 RUN apk --no-cache add git make gcc g++ bash curl \
-  && curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"  | bash
-  # && go install sigs.k8s.io/kustomize/kustomize/v3@latest
+  && GOBIN=$(pwd)/ go install sigs.k8s.io/kustomize/kustomize/v4
 
 RUN make build
 
