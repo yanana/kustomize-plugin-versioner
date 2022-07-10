@@ -1,8 +1,12 @@
 language: go
 
 go:
-  - '1.16'
   - '1.17'
+  - '1.18'
+
+
+env:
+  - CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
 script:
   - export GO111MODULE=on CGO_ENABLED=1 GOROOT=$(go env GOROOT)
