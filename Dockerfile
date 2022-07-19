@@ -13,7 +13,7 @@ RUN apk --no-cache add git make gcc g++ bash curl \
 
 RUN make build
 
-FROM alpine:3.16.0
+FROM alpine:3.16.1
 
 COPY --from=builder /app/kustomize /usr/bin/kustomize
 COPY --from=builder /root/.config/kustomize/plugin /root/.config/kustomize/plugin/
